@@ -65,6 +65,9 @@ export const botStarted = (cfg: Config) =>
 
 export const botStartFailed = (error: string) => `Бот не запустился: ${error}`;
 
+export const botCrashed = (error: string) =>
+  `Бот упал и не работает: ${error}\nСделки не исполняются, пока бот не перезапущен (bun start).`;
+
 export const botStopped = (signal: string, holding: string) =>
   `Бот остановлен (${signal}).${holding ? ` Сейчас держим ${holding}.` : ""} Пока бот не запущен, сигналы не исполняются.`;
 

@@ -15,11 +15,27 @@ async function sleepUnless(seconds: number, stopped: () => boolean) {
   for (let s = 0; s < seconds && !stopped(); s++) await new Promise((r) => setTimeout(r, 1000));
 }
 
+/** Сигналы, по которым бот штатно останавливается и присылает «Бот остановлен». */
+const STOP_SIGNALS = { SIGINT: "Ctrl+C", SIGTERM: "SIGTERM", SIGHUP: "закрыт терминал" } as const;
+
 export async function cmdRun({ cfg, log }: Ctx) {
   log.info(`Старт ${fmtTime(Date.now())}: режим ${cfg.mode}, ${cfg.symbol}, MA${cfg.maPeriod}, sizing=${cfg.sizing}, execution=${cfg.execution}`);
   if (cfg.mode === "live") log.warn("БОЕВОЙ РЕЖИМ: бот будет отправлять реальные ордера на Bybit.");
 
   const notifier = new Notifier(cfg, log);
+
+  // Неожиданная ошибка вне проверки (баг, сбой рантайма) иначе убила бы процесс молча: сообщаем и выходим с кодом 1
+  let crashed = false;
+  const crash = async (e: unknown) => {
+    if (crashed) return;
+    crashed = true;
+    log.error(`Бот упал: ${errStack(e)}`);
+    await notifier.send(msg.botCrashed(errText(e)));
+    process.exit(1);
+  };
+  process.on("uncaughtException", crash);
+  process.on("unhandledRejection", crash);
+
   let account;
   try {
     account = await openAccount(cfg);
@@ -33,13 +49,13 @@ export async function cmdRun({ cfg, log }: Ctx) {
 
   let stopSignal = "";
   const stopping = () => stopSignal !== "";
-  const stop = (signal: string) => {
-    if (stopping()) return;
-    stopSignal = signal;
-    log.info(`Получен ${signal}, завершаюсь после текущей проверки`);
-  };
-  process.on("SIGINT", stop);
-  process.on("SIGTERM", stop);
+  for (const [signal, reason] of Object.entries(STOP_SIGNALS)) {
+    process.on(signal, () => {
+      if (stopping()) return;
+      stopSignal = reason;
+      log.info(`Получен ${signal}, завершаюсь после текущей проверки`);
+    });
+  }
 
   let errorStreak = 0;
   while (!stopping()) {
@@ -59,5 +75,5 @@ export async function cmdRun({ cfg, log }: Ctx) {
   const holding = await Promise.all([broker.balances(), broker.price()])
     .then(([bal, price]) => (isInPosition(cfg, bal.base, price) ? broker.base : broker.quote))
     .catch(() => "");
-  await notifier.send(msg.botStopped(stopSignal === "SIGINT" ? "Ctrl+C" : stopSignal, holding));
+  await notifier.send(msg.botStopped(stopSignal, holding));
 }

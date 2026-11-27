@@ -10,12 +10,17 @@ export class Notifier {
     this.log.info(`Уведомление: ${text.replace(/\n/g, " | ")}`);
     if (!this.cfg.telegramToken || !this.cfg.telegramChatId) return;
     try {
-      await fetch(`https://api.telegram.org/bot${this.cfg.telegramToken}/sendMessage`, {
+      const res = await fetch(`https://api.telegram.org/bot${this.cfg.telegramToken}/sendMessage`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ chat_id: this.cfg.telegramChatId, text: prefix + text }),
         signal: AbortSignal.timeout(15000),
       });
+      // Telegram отвечает ошибкой без исключения (неверный chat id, бот удалён из группы) - иначе это пропало бы молча
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { description?: string };
+        this.log.warn(`Telegram отклонил сообщение: ${res.status} ${body.description ?? ""}`);
+      }
     } catch (e) {
       this.log.warn(`Не удалось отправить в Telegram: ${(e as Error).message}`);
     }
