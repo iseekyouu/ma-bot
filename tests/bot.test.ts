@@ -2,10 +2,13 @@ import { describe, expect, test, beforeEach } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import {
-  checkAndTrade, DEFAULT_CONFIG, ExchangeBroker, Logger, Notifier, PaperBroker, validateConfig,
-  type Config, type ExchangeLike, type State,
-} from "../src/bot";
+import { checkAndTrade } from "../src/bot";
+import { ExchangeBroker, PaperBroker } from "../src/brokers";
+import { DEFAULT_CONFIG, validateConfig, type Config } from "../src/config";
+import type { ExchangeLike } from "../src/exchange";
+import { Logger } from "../src/logger";
+import { Notifier } from "../src/notifier";
+import type { State } from "../src/storage";
 import { backtest, buyBudget, computeSignal, DAY_MS, type Candle } from "../src/strategy";
 
 const T0 = Date.UTC(2026, 0, 1);
@@ -88,7 +91,8 @@ const log = new Logger(null);
 
 beforeEach(() => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), "mabot-"));
-  cfg = { ...DEFAULT_CONFIG, maPeriod: 5, dataDir: path.join(dir, "data"), telegramDailyReport: false };
+  cfg = { ...DEFAULT_CONFIG, maPeriod: 5, dataDir: path.join(dir, "data"), stopFile: path.join(dir, "STOP"),
+    telegramDailyReport: false };
   fs.mkdirSync(cfg.dataDir);
 });
 
@@ -170,8 +174,44 @@ describe("цикл бота на фейковой бирже", () => {
 
     at(15);
     expect(await checkAndTrade(c, ex, broker, state, notifier, log)).toBe("hold");
-    const csv = fs.readFileSync(path.join(c.dataDir, "trades.csv"), "utf8").trim().split("\n");
+    const csv = fs.readFileSync(path.join(c.dataDir, "trades-live.csv"), "utf8").trim().split("\n");
     expect(csv.length).toBe(3); // заголовок + покупка + продажа
+  });
+
+  test("результат сделки: продажа считается относительно покупки и пишется в журнал", async () => {
+    const { ex, state, c, broker, notes, notifier, at } = setup("live");
+    at(6);
+    expect(await checkAndTrade(c, ex, broker, state, notifier, log)).toBe("buy");
+    expect(state.entry!.cost).toBeCloseTo(3000);
+    expect(notes[0]).not.toContain("Прибыль");
+
+    at(13);
+    expect(await checkAndTrade(c, ex, broker, state, notifier, log)).toBe("sell");
+    const [header, buyRow, sellRow] = fs.readFileSync(path.join(c.dataDir, "trades-live.csv"), "utf8").trim().split("\n");
+    const col = (row: string, name: string) => row.split(",")[header.split(",").indexOf(name)];
+    expect(col(buyRow, "pnl_quote")).toBe("");
+    const sold = Number(col(sellRow, "cost_quote"));
+    expect(Number(col(sellRow, "pnl_quote"))).toBeCloseTo(sold - 3000, 1);
+    expect(Number(col(sellRow, "pnl_pct"))).toBeCloseTo(((sold - 3000) / 3000) * 100, 1);
+    expect(notes.at(-1)).toMatch(/(Прибыль|Убыток): [+-]\d/);
+    expect(state.entry).toBeUndefined();
+  });
+
+  test("день уже обработан: до следующего закрытия свечи у биржи не запрашиваются", async () => {
+    const { ex, state, c, broker, notifier, at } = setup("live");
+    at(6);
+    expect(await checkAndTrade(c, ex, broker, state, notifier, log)).toBe("buy");
+    let candleRequests = 0;
+    const fetch = ex.fetchOHLCV.bind(ex);
+    ex.fetchOHLCV = async (...a) => { candleRequests++; return fetch(...a); };
+
+    ex.now = T0 + 6 * DAY_MS + 23 * 3_600_000; // тот же день, 23:00 UTC
+    expect(await checkAndTrade(c, ex, broker, state, notifier, log)).toBe("already_processed");
+    expect(candleRequests).toBe(0);
+
+    at(7); // закрылся следующий день - снова идём за свечами
+    expect(await checkAndTrade(c, ex, broker, state, notifier, log)).toBe("hold");
+    expect(candleRequests).toBe(1);
   });
 
   test("бот был выключен: исполняет текущий сигнал с пометкой об опоздании", async () => {
@@ -198,13 +238,13 @@ describe("цикл бота на фейковой бирже", () => {
 
   test("файл STOP блокирует торговлю и не помечает день обработанным", async () => {
     const { ex, state, c, broker, notes, notifier, at } = setup("live");
-    fs.writeFileSync(path.join(c.dataDir, "..", "STOP"), "");
+    fs.writeFileSync(c.stopFile, "");
     at(6);
     expect(await checkAndTrade(c, ex, broker, state, notifier, log)).toBe("stopped");
     expect(ex.orders.length).toBe(0);
     expect(state.lastCandleTs).toBeUndefined();
     expect(notes[0]).toContain("STOP");
-    fs.rmSync(path.join(c.dataDir, "..", "STOP"));
+    fs.rmSync(c.stopFile);
     expect(await checkAndTrade(c, ex, broker, state, notifier, log)).toBe("buy");
   });
 
@@ -311,7 +351,7 @@ describe("лимитный режим исполнения", () => {
     const { ex, state, notes, at, run, c } = setupL("live");
     at(6);
     await run();
-    fs.writeFileSync(path.join(c.dataDir, "..", "STOP"), "");
+    fs.writeFileSync(c.stopFile, "");
     at(6, 30);
     expect(await run()).toBe("stopped");
     expect(ex.orders[0].status).toBe("canceled");

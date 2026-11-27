@@ -68,9 +68,8 @@ export function backtest(candles: Candle[], period: number, days: number, feePct
   let peak = start, mdd = 0;
   const trades: BacktestResult["trades"] = [];
   for (let i = a; i < candles.length; i++) {
-    let sum = 0;
-    for (let k = i - period; k < i; k++) sum += candles[k][4];
-    const want = candles[i - 1][4] > sum / period;
+    // тот же сигнал, что у живого бота: закрытие дня i-1 против MA по дням i-period..i-1
+    const want = computeSignal(candles.slice(i - period, i), period).wantBase;
     const open = candles[i][1];
     if (want && !inPos) {
       entryCash = cash;

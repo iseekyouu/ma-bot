@@ -1,0 +1,46 @@
+import { checkAndTrade, type Action } from "../bot";
+import { errStack, errText, fmtTime } from "../format";
+import { Notifier } from "../notifier";
+import { openAccount, type Ctx } from "./context";
+
+/** Штатные исходы проверки, о которых не пишем в лог на каждой итерации. */
+const ROUTINE_ACTIONS = new Set<Action>(["wait", "already_processed", "limit_pending"]);
+
+/** Уведомляем о первой ошибке подряд, о пятой и далее о каждой двадцатой — чтобы не спамить. */
+const shouldNotifyError = (streak: number) => streak === 1 || streak === 5 || streak % 20 === 0;
+
+/** Спит seconds секунд, просыпаясь раз в секунду, чтобы быстро реагировать на остановку. */
+async function sleepUnless(seconds: number, stopped: () => boolean) {
+  for (let s = 0; s < seconds && !stopped(); s++) await new Promise((r) => setTimeout(r, 1000));
+}
+
+export async function cmdRun({ cfg, log }: Ctx) {
+  log.info(`Старт ${fmtTime(Date.now())}: режим ${cfg.mode}, ${cfg.symbol}, MA${cfg.maPeriod}, sizing=${cfg.sizing}, execution=${cfg.execution}`);
+  if (cfg.mode === "live") log.warn("БОЕВОЙ РЕЖИМ: бот будет отправлять реальные ордера на Bybit.");
+
+  const { ex, state, broker } = await openAccount(cfg);
+  const notifier = new Notifier(cfg, log);
+  await notifier.send(`Бот запущен: ${cfg.symbol}, MA${cfg.maPeriod}, режим ${cfg.mode}, проверка каждые ${cfg.checkIntervalMinutes} мин.`);
+
+  let stopping = false;
+  const stop = () => {
+    stopping = true;
+    log.info("Получен сигнал остановки, завершаюсь после текущей проверки");
+  };
+  process.on("SIGINT", stop);
+  process.on("SIGTERM", stop);
+
+  let errorStreak = 0;
+  while (!stopping) {
+    try {
+      const action = await checkAndTrade(cfg, ex, broker, state, notifier, log);
+      if (!ROUTINE_ACTIONS.has(action)) log.info(`Действие: ${action}`);
+      errorStreak = 0;
+    } catch (e) {
+      errorStreak++;
+      log.error(`Ошибка проверки (${errorStreak} подряд): ${errStack(e)}`);
+      if (shouldNotifyError(errorStreak)) await notifier.send(`Ошибка бота (${errorStreak} подряд): ${errText(e)}`);
+    }
+    await sleepUnless(cfg.checkIntervalMinutes * 60, () => stopping);
+  }
+}
