@@ -1,0 +1,24 @@
+{
+  "mode": "paper",
+  "symbol": "BTC/USDT",
+  "maPeriod": 50,
+
+  "sizing": "all",
+  "fixedAmountQuote": 1000,
+  "reservePct": 0.5,
+  "maxOrderQuote": 3000,
+  "minPositionQuote": 10,
+
+  "execution": "market",
+  "limitOffsetPct": 0.3,
+  "limitTimeoutHours": 4,
+
+  "checkIntervalMinutes": 15,
+  "executionDelayMinutes": 5,
+
+  "paperStartQuote": 1000,
+  "feePct": 0.1,
+
+  "telegramDailyReport": true,
+  "dataDir": "data"
+}
