@@ -6,6 +6,7 @@
   "private": true,
   "scripts": {
     "start": "bun run src/main.ts run",
+    "start:mac": "caffeinate -is bun run src/main.ts run",
     "once": "bun run src/main.ts once",
     "status": "bun run src/main.ts status",
     "backtest": "bun run src/main.ts backtest",
