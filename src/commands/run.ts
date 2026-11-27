@@ -1,5 +1,6 @@
-import { checkAndTrade, type Action } from "../bot";
+import { checkAndTrade, isInPosition, type Action } from "../bot";
 import { errStack, errText, fmtTime } from "../format";
+import * as msg from "../messages";
 import { Notifier } from "../notifier";
 import { openAccount, type Ctx } from "./context";
 
@@ -18,20 +19,30 @@ export async function cmdRun({ cfg, log }: Ctx) {
   log.info(`Старт ${fmtTime(Date.now())}: режим ${cfg.mode}, ${cfg.symbol}, MA${cfg.maPeriod}, sizing=${cfg.sizing}, execution=${cfg.execution}`);
   if (cfg.mode === "live") log.warn("БОЕВОЙ РЕЖИМ: бот будет отправлять реальные ордера на Bybit.");
 
-  const { ex, state, broker } = await openAccount(cfg);
   const notifier = new Notifier(cfg, log);
-  await notifier.send(`Бот запущен: ${cfg.symbol}, MA${cfg.maPeriod}, режим ${cfg.mode}, проверка каждые ${cfg.checkIntervalMinutes} мин.`);
+  let account;
+  try {
+    account = await openAccount(cfg);
+  } catch (e) {
+    // например, Bybit недоступен или ключ неверный - сообщаем, иначе бот молча не работает
+    await notifier.send(msg.botStartFailed(errText(e)));
+    throw e;
+  }
+  const { ex, state, broker } = account;
+  await notifier.send(msg.botStarted(cfg));
 
-  let stopping = false;
-  const stop = () => {
-    stopping = true;
-    log.info("Получен сигнал остановки, завершаюсь после текущей проверки");
+  let stopSignal = "";
+  const stopping = () => stopSignal !== "";
+  const stop = (signal: string) => {
+    if (stopping()) return;
+    stopSignal = signal;
+    log.info(`Получен ${signal}, завершаюсь после текущей проверки`);
   };
   process.on("SIGINT", stop);
   process.on("SIGTERM", stop);
 
   let errorStreak = 0;
-  while (!stopping) {
+  while (!stopping()) {
     try {
       const action = await checkAndTrade(cfg, ex, broker, state, notifier, log);
       if (!ROUTINE_ACTIONS.has(action)) log.info(`Действие: ${action}`);
@@ -41,6 +52,12 @@ export async function cmdRun({ cfg, log }: Ctx) {
       log.error(`Ошибка проверки (${errorStreak} подряд): ${errStack(e)}`);
       if (shouldNotifyError(errorStreak)) await notifier.send(`Ошибка бота (${errorStreak} подряд): ${errText(e)}`);
     }
-    await sleepUnless(cfg.checkIntervalMinutes * 60, () => stopping);
+    await sleepUnless(cfg.checkIntervalMinutes * 60, stopping);
   }
+
+  // что сейчас на счёте - по реальному балансу; если биржа не ответила, просто не пишем
+  const holding = await Promise.all([broker.balances(), broker.price()])
+    .then(([bal, price]) => (isInPosition(cfg, bal.base, price) ? broker.base : broker.quote))
+    .catch(() => "");
+  await notifier.send(msg.botStopped(stopSignal === "SIGINT" ? "Ctrl+C" : stopSignal, holding));
 }

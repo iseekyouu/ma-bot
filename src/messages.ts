@@ -59,6 +59,15 @@ export const pendingDone = (cfg: Config, quote: string, p: Pending, how: string,
 export const pnlNote = (quote: string, pnl?: Pnl) =>
   pnl ? `\n${pnl.quote >= 0 ? "Прибыль" : "Убыток"}: ${sign(pnl.quote)}${pnl.quote.toFixed(2)} ${quote} (${sign(pnl.pct)}${pnl.pct.toFixed(2)}%)` : "";
 
+export const botStarted = (cfg: Config) =>
+  `Бот запущен: ${cfg.symbol}, MA${cfg.maPeriod}, режим ${cfg.mode}, исполнение ${cfg.execution === "limit" ? "лимиткой" : "по рынку"}, ` +
+  `проверка каждые ${cfg.checkIntervalMinutes} мин.`;
+
+export const botStartFailed = (error: string) => `Бот не запустился: ${error}`;
+
+export const botStopped = (signal: string, holding: string) =>
+  `Бот остановлен (${signal}).${holding ? ` Сейчас держим ${holding}.` : ""} Пока бот не запущен, сигналы не исполняются.`;
+
 export const dailyReport = (cfg: Config, s: SignalInfo, holding: string, total: number, quote: string) =>
   `${s.day}: без изменений, держим ${holding}.\n` +
   `Закрытие ${s.close.toFixed(2)}, MA${cfg.maPeriod} ${s.ma.toFixed(2)}. Баланс ~${total.toFixed(2)} ${quote}`;
