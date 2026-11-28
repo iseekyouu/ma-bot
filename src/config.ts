@@ -31,6 +31,7 @@ export interface Config {
   telegramChatId: string;
   telegramDailyReport: boolean;
   dataDir: string;
+  logRetentionDays: number;
   stopFile: string;
 }
 
@@ -79,6 +80,7 @@ const SCHEMA: convict.Schema<Config> = {
   telegramChatId: { doc: "чат для уведомлений", format: String, default: "", env: "TELEGRAM_CHAT_ID" },
   telegramDailyReport: { doc: "ежедневный отчёт", format: Boolean, default: true },
   dataDir: { doc: "папка для состояния, журнала и лога", format: String, default: "data" },
+  logRetentionDays: { doc: "сколько дней хранить логи (по файлу на день)", format: range(1, Infinity, { integer: true }), default: 30 },
   stopFile: { doc: "файл-рубильник: пока он есть, бот не торгует", format: String, default: "STOP" },
 };
 

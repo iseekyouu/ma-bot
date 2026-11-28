@@ -14,6 +14,20 @@ export type Action =
   | "wait" | "already_processed" | "hold" | "buy" | "sell" | "stopped"
   | "limit_placed" | "limit_pending" | "limit_filled" | "limit_timeout";
 
+/** Итог проверки человеческими словами - для лога. */
+export const ACTION_TEXT: Record<Action, string> = {
+  already_processed: "день уже обработан, к бирже не обращался",
+  wait: "день закрылся, жду executionDelayMinutes после 00:00 UTC",
+  hold: "сигнал совпадает с позицией, ничего не меняю",
+  buy: "купил по рынку",
+  sell: "продал по рынку",
+  stopped: "найден файл STOP, не торгую",
+  limit_placed: "выставил лимитный ордер",
+  limit_pending: "лимитка ещё не исполнилась, жду",
+  limit_filled: "лимитка исполнилась",
+  limit_timeout: "лимитка не исполнилась вовремя, добрал по рынку",
+};
+
 /** Всё, что нужно одной проверке. */
 interface Run {
   cfg: Config;

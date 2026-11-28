@@ -1,11 +1,9 @@
-import { checkAndTrade, isInPosition, type Action } from "../bot";
+import { ACTION_TEXT, checkAndTrade, isInPosition } from "../bot";
 import { errStack, errText, fmtTime } from "../format";
 import * as msg from "../messages";
 import { Notifier } from "../notifier";
+import { listenCommands } from "../telegram-commands";
 import { openAccount, type Ctx } from "./context";
-
-/** Штатные исходы проверки, о которых не пишем в лог на каждой итерации. */
-const ROUTINE_ACTIONS = new Set<Action>(["wait", "already_processed", "limit_pending"]);
 
 /** Уведомляем о первой ошибке подряд, о пятой и далее о каждой двадцатой — чтобы не спамить. */
 const shouldNotifyError = (streak: number) => streak === 1 || streak === 5 || streak % 20 === 0;
@@ -49,19 +47,23 @@ export async function cmdRun({ cfg, log }: Ctx) {
 
   let stopSignal = "";
   const stopping = () => stopSignal !== "";
+  const stopCtl = new AbortController(); // прерывает ожидание команд из Telegram
   for (const [signal, reason] of Object.entries(STOP_SIGNALS)) {
     process.on(signal, () => {
       if (stopping()) return;
       stopSignal = reason;
+      stopCtl.abort();
       log.info(`Получен ${signal}, завершаюсь после текущей проверки`);
     });
   }
+
+  const commands = listenCommands(cfg, log, stopCtl.signal); // работает параллельно с проверками
 
   let errorStreak = 0;
   while (!stopping()) {
     try {
       const action = await checkAndTrade(cfg, ex, broker, state, notifier, log);
-      if (!ROUTINE_ACTIONS.has(action)) log.info(`Действие: ${action}`);
+      log.info(`Проверка: ${ACTION_TEXT[action]} (${action})`);
       errorStreak = 0;
     } catch (e) {
       errorStreak++;
@@ -75,5 +77,6 @@ export async function cmdRun({ cfg, log }: Ctx) {
   const holding = await Promise.all([broker.balances(), broker.price()])
     .then(([bal, price]) => (isInPosition(cfg, bal.base, price) ? broker.base : broker.quote))
     .catch(() => "");
+  await commands;
   await notifier.send(msg.botStopped(stopSignal, holding));
 }

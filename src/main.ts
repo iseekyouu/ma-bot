@@ -58,7 +58,7 @@ async function main() {
     process.exit(args.command ? 1 : 0);
   }
   const cfg = loadConfig(args.config);
-  const log = new Logger(path.join(cfg.dataDir, "bot.log"));
+  const log = new Logger(path.join(cfg.dataDir, "logs"), cfg.logRetentionDays);
   await command.run({ cfg, log, args });
 }
 

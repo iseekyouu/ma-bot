@@ -20,5 +20,6 @@
   "feePct": 0.1,
 
   "telegramDailyReport": true,
-  "dataDir": "data"
+  "dataDir": "data",
+  "logRetentionDays": 30
 }

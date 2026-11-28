@@ -373,3 +373,20 @@ describe("лимитный режим исполнения", () => {
     expect(await checkAndTrade(c, ex, broker, saved, notifier, log)).toBe("limit_filled");
   });
 });
+
+describe("лог по дням", () => {
+  test("readSince берёт записи за период из нескольких файлов, многострочные - целиком", () => {
+    const logs = path.join(dir, "logs");
+    const now = Date.now();
+    const stamp = (ms: number) => new Date(ms).toISOString().replace("T", " ").slice(0, 19);
+    const day = (ms: number) => new Date(ms).toISOString().slice(0, 10);
+    fs.mkdirSync(logs);
+    const lines = [now - 30 * 3_600_000, now - 5 * 3_600_000, now - 3 * 3_600_000, now - 60_000]
+      .map((ms, i) => ({ ms, text: `${stamp(ms)} INFO запись ${i}` + (i === 2 ? "\n    at стек ошибки" : "") }));
+    for (const l of lines) fs.appendFileSync(path.join(logs, `bot-${day(l.ms)}.log`), l.text + "\n");
+    const lg = new Logger(logs);
+    expect(lg.readSince(now - 4 * 3_600_000)).toBe(`${lines[2].text}\n${lines[3].text}`);
+    expect(lg.readSince(now - 24 * 3_600_000).split("\n").length).toBe(4);
+    expect(new Logger(null).readSince(0)).toBe("");
+  });
+});
