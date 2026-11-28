@@ -3,13 +3,33 @@
 
 import type { Config } from "./config";
 import { errText } from "./format";
-import type { Logger } from "./logger";
+import { tzLabel, type Logger } from "./logger";
 
 const PERIODS = [
   { hours: 4, label: "4 ч" },
   { hours: 12, label: "12 ч" },
   { hours: 24, label: "Сутки" },
 ];
+
+/** Больше сообщений подряд не шлём - присылаем файлом. */
+const MAX_TEXT_MESSAGES = 5;
+/** Лимит Telegram - 4096 символов на сообщение, оставляем запас на заголовок и теги. */
+const CHUNK_CHARS = 3800;
+
+const escapeHtml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+/** Делит лог на куски по целым строкам (уже экранированные для HTML), каждый влезает в одно сообщение. */
+export function splitForTelegram(text: string): string[] {
+  const chunks: string[] = [];
+  let cur = "";
+  for (const raw of text.split("\n")) {
+    const line = escapeHtml(raw.length > CHUNK_CHARS / 2 ? raw.slice(0, CHUNK_CHARS / 2) + "…" : raw);
+    if (cur && cur.length + line.length + 1 > CHUNK_CHARS) { chunks.push(cur); cur = ""; }
+    cur += (cur ? "\n" : "") + line;
+  }
+  if (cur) chunks.push(cur);
+  return chunks;
+}
 
 interface Update {
   update_id: number;
@@ -38,10 +58,21 @@ export async function listenCommands(cfg: Config, log: Logger, stop: AbortSignal
   async function sendLog(hours: number) {
     log.info(`Telegram: запрошен лог за ${hours} ч`);
     const text = log.readSince(Date.now() - hours * 3_600_000);
+    const title = `Лог за последние ${hours} ч (время ${tzLabel()})`;
     if (!text) return api("sendMessage", { chat_id: cfg.telegramChatId, text: `За последние ${hours} ч записей в логе нет.` });
+
+    // текстом, если влезает в несколько сообщений; иначе файлом
+    const chunks = splitForTelegram(text);
+    if (chunks.length <= MAX_TEXT_MESSAGES) {
+      for (const [i, chunk] of chunks.entries()) {
+        const head = i === 0 ? `${title}:\n` : "";
+        await api("sendMessage", { chat_id: cfg.telegramChatId, text: `${head}<pre>${chunk}</pre>`, parse_mode: "HTML" });
+      }
+      return;
+    }
     const form = new FormData();
     form.append("chat_id", cfg.telegramChatId);
-    form.append("caption", `Лог за последние ${hours} ч (время UTC)`);
+    form.append("caption", `${title}. Длинный, поэтому файлом.`);
     const stamp = new Date().toISOString().slice(0, 16).replace(/[T:]/g, "-");
     form.append("document", new Blob([text], { type: "text/plain" }), `bot-${stamp}-last-${hours}h.log`);
     return api("sendDocument", form, 60_000);

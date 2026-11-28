@@ -3,6 +3,7 @@ import { errStack, errText, fmtTime } from "../format";
 import * as msg from "../messages";
 import { Notifier } from "../notifier";
 import { listenCommands } from "../telegram-commands";
+import { VERSION } from "../version";
 import { openAccount, type Ctx } from "./context";
 
 /** Уведомляем о первой ошибке подряд, о пятой и далее о каждой двадцатой — чтобы не спамить. */
@@ -17,7 +18,7 @@ async function sleepUnless(seconds: number, stopped: () => boolean) {
 const STOP_SIGNALS = { SIGINT: "Ctrl+C", SIGTERM: "SIGTERM", SIGHUP: "закрыт терминал" } as const;
 
 export async function cmdRun({ cfg, log }: Ctx) {
-  log.info(`Старт ${fmtTime(Date.now())}: режим ${cfg.mode}, ${cfg.symbol}, MA${cfg.maPeriod}, sizing=${cfg.sizing}, execution=${cfg.execution}`);
+  log.info(`Старт v${VERSION} ${fmtTime(Date.now())}: режим ${cfg.mode}, ${cfg.symbol}, MA${cfg.maPeriod}, sizing=${cfg.sizing}, execution=${cfg.execution}`);
   if (cfg.mode === "live") log.warn("БОЕВОЙ РЕЖИМ: бот будет отправлять реальные ордера на Bybit.");
 
   const notifier = new Notifier(cfg, log);

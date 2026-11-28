@@ -6,8 +6,9 @@ import { checkAndTrade } from "../src/bot";
 import { ExchangeBroker, PaperBroker } from "../src/brokers";
 import { DEFAULT_CONFIG, validateConfig, type Config } from "../src/config";
 import type { ExchangeLike } from "../src/exchange";
-import { Logger } from "../src/logger";
+import { localStamp, Logger } from "../src/logger";
 import { Notifier } from "../src/notifier";
+import { splitForTelegram } from "../src/telegram-commands";
 import type { State } from "../src/storage";
 import { backtest, buyBudget, computeSignal, DAY_MS, type Candle } from "../src/strategy";
 
@@ -378,8 +379,8 @@ describe("лог по дням", () => {
   test("readSince берёт записи за период из нескольких файлов, многострочные - целиком", () => {
     const logs = path.join(dir, "logs");
     const now = Date.now();
-    const stamp = (ms: number) => new Date(ms).toISOString().replace("T", " ").slice(0, 19);
-    const day = (ms: number) => new Date(ms).toISOString().slice(0, 10);
+    const stamp = localStamp;
+    const day = (ms: number) => localStamp(ms).slice(0, 10);
     fs.mkdirSync(logs);
     const lines = [now - 30 * 3_600_000, now - 5 * 3_600_000, now - 3 * 3_600_000, now - 60_000]
       .map((ms, i) => ({ ms, text: `${stamp(ms)} INFO запись ${i}` + (i === 2 ? "\n    at стек ошибки" : "") }));
@@ -389,4 +390,12 @@ describe("лог по дням", () => {
     expect(lg.readSince(now - 24 * 3_600_000).split("\n").length).toBe(4);
     expect(new Logger(null).readSince(0)).toBe("");
   });
+});
+
+test("лог для Telegram делится на сообщения по целым строкам и экранируется", () => {
+  const lines = Array.from({ length: 100 }, (_, i) => `2026-11-28 00:${String(i % 60).padStart(2, "0")}:00 INFO строка ${i} <a&b>`);
+  const chunks = splitForTelegram(lines.join("\n"));
+  expect(chunks.length).toBeGreaterThan(1);
+  for (const c of chunks) expect(c.length).toBeLessThanOrEqual(3800);
+  expect(chunks.join("\n").split("\n")).toEqual(lines.map((l) => l.replace("<a&b>", "&lt;a&amp;b&gt;")));
 });

@@ -4,6 +4,7 @@ import { fetchClosedDaily } from "../exchange";
 import { fmtDay, fmtTime } from "../format";
 import { isStopped } from "../storage";
 import { computeSignal } from "../strategy";
+import { VERSION } from "../version";
 import { openAccount, type Ctx } from "./context";
 
 /** Печатает пары «метка: значение» с выровненной колонкой значений. */
@@ -30,6 +31,7 @@ export async function cmdStatus({ cfg }: Ctx) {
   const total = bal.quote + bal.base * price;
 
   const rows: [string, string][] = [
+    ["Версия", VERSION],
     ["Режим", cfg.mode],
     ["Стратегия", `${cfg.symbol}, MA${cfg.maPeriod} на дневных свечах`],
     ["Последняя свеча", `${fmtDay(sig.candleTs)}, закрытие ${sig.close.toFixed(2)}`],

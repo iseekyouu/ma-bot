@@ -4,6 +4,7 @@ import type { Fill, Pending, Side } from "./brokers";
 import type { Config } from "./config";
 import { sign } from "./format";
 import type { Pnl } from "./storage";
+import { VERSION } from "./version";
 
 /** Что запомнили о сигнале, по которому торгуем. */
 export interface SignalInfo {
@@ -61,7 +62,7 @@ export const pnlNote = (quote: string, pnl?: Pnl) =>
 
 export const botStarted = (cfg: Config) =>
   `Бот запущен: ${cfg.symbol}, MA${cfg.maPeriod}, режим ${cfg.mode}, исполнение ${cfg.execution === "limit" ? "лимиткой" : "по рынку"}, ` +
-  `проверка каждые ${cfg.checkIntervalMinutes} мин.`;
+  `проверка каждые ${cfg.checkIntervalMinutes} мин. Версия ${VERSION}.`;
 
 export const botStartFailed = (error: string) => `Бот не запустился: ${error}`;
 
